@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Simulación de Comunicación Acústica Submarina con Three.js</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+        canvas { display: block; }
+        #info-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #00ffcc;
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #00ffcc;
+            max-width: 300px;
+        }
+        h1 { margin-top: 0; font-size: 1.2em; }
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #00ffcc;
+            border: none;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        button:hover { background-color: #5effe0; }
+        #status {
+            margin-top: 10px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9em;
+            height: 100px;
+            overflow-y: auto;
+        }
+        #status p { margin: 2px 0; }
+        .direct { color: #ffff00; }
+        .surface { color: #ff6666; }
+        .floor { color: #66a3ff; }
+    </style>
+</head>
+<body>
+
+    <div id="info-panel">
+        <h1>Simulador de Comunicación Acústica Submarina</h1>
+        <p>Demuestra el efecto del multicamino (multipath). La señal viaja por varias rutas, llegando en momentos distintos.</p>
+        <button id="transmitButton">Transmitir Datos</button>
+        <div id="status">
+            <p>Estado: En espera...</p>
+        </div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- Configuración básica ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x001e3d, 0.005);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(50, 20, 150);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setClearColor(scene.fog.color);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.maxPolarAngle = Math.PI * 0.55; // Limita para no ir bajo el suelo
+
+        // --- Elementos del Entorno ---
+        // Luces
+        const ambientLight = new THREE.AmbientLight(0x408090, 2);
+        scene.add(ambientLight);
+        const sun = new THREE.DirectionalLight(0xffffff, 2);
+        sun.position.set(0, 100, 50);
+        scene.add(sun);
+
+        // Superficie del mar
+        const seaLevel = 20;
+        const seaGeometry = new THREE.PlaneGeometry(1000, 1000);
+        const seaMaterial = new THREE.MeshStandardMaterial({
+            color: 0x0077be,
+            transparent: true,
+            opacity: 0.6,
+            metalness: 0.8,
+            roughness: 0.2,
+        });
+        const seaSurface = new THREE.Mesh(seaGeometry, seaMaterial);
+        seaSurface.rotation.x = -Math.PI / 2;
+        seaSurface.position.y = seaLevel;
+        scene.add(seaSurface);
+
+        // Fondo marino
+        const floorGeometry = new THREE.PlaneGeometry(1000, 1000, 50, 50);
+        const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x4a4234, roughness: 1 });
+        const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+        const vertices = floor.geometry.attributes.position.array;
+        for (let i = 2; i < vertices.length; i += 3) {
+            vertices[i] = Math.random() * 5; // Deformación simple del terreno
+        }
+        floor.geometry.attributes.position.needsUpdate = true;
+        floor.geometry.computeVertexNormals();
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = -50;
+        scene.add(floor);
+        
+        // Partículas (nieve marina)
+        const particlesGeometry = new THREE.BufferGeometry();
+        const particlesCount = 5000;
+        const posArray = new Float32Array(particlesCount * 3);
+        for(let i=0; i<particlesCount * 3; i++) {
+            posArray[i] = (Math.random() - 0.5) * 400;
+        }
+        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        const particlesMaterial = new THREE.PointsMaterial({ size: 0.1, color: 0xeeeeff, transparent: true, opacity: 0.5 });
+        const marineSnow = new THREE.Points(particlesGeometry, particlesMaterial);
+        scene.add(marineSnow);
+
+
+        // --- Actores de la Simulación ---
+        // Transmisor (Submarino)
+        const subMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.9, roughness: 0.4 });
+        const subBody = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 20, 32), subMaterial);
+        subBody.rotation.z = Math.PI / 2;
+        const subTower = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2, 6, 16), subMaterial);
+        subTower.position.y = 3;
+        const transmitter = new THREE.Group();
+        transmitter.add(subBody, subTower);
+        transmitter.position.set(-80, -20, 0);
+        scene.add(transmitter);
+        
+        // Receptor (Boya)
+        const buoyMaterial = new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.5 });
+        const buoyBody = new THREE.Mesh(new THREE.CylinderGeometry(3, 4, 8, 16), buoyMaterial);
+        buoyBody.position.y = seaLevel - 4;
+        const buoyAntenna = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 10, 8), new THREE.MeshStandardMaterial({color: 0x333333}));
+        buoyAntenna.position.y = seaLevel + 1;
+        const receiver = new THREE.Group();
+        receiver.add(buoyBody, buoyAntenna);
+        receiver.position.set(80, 0, 0);
+        scene.add(receiver);
+        
+        const receiverPosition = new THREE.Vector3(80, seaLevel, 0); // Posición del hidrófono
+
+
+        // --- Lógica de la Simulación de Señal ---
+        const clock = new THREE.Clock();
+        let activeSignals = [];
+        const transmitButton = document.getElementById('transmitButton');
+        const statusDiv = document.getElementById('status');
+        let transmitting = false;
+
+        transmitButton.addEventListener('click', () => {
+            if (transmitting) return;
+            sendSignal();
+        });
+
+        function sendSignal() {
+            transmitting = true;
+            statusDiv.innerHTML = '<p>Estado: Transmitiendo...</p>';
+            
+            const startPos = transmitter.position.clone();
+            const endPos = receiverPosition.clone();
+            const speed = 25; // Unidades por segundo
+
+            // 1. Ruta Directa
+            const directDist = startPos.distanceTo(endPos);
+            createSignalPath(startPos, endPos, directDist / speed, 'direct');
+            
+            // 2. Ruta con Reflejo en Superficie
+            const surfaceBouncePoint = new THREE.Vector3().lerpVectors(startPos, endPos, 0.5);
+            surfaceBouncePoint.y = seaLevel;
+            const surfaceDist = startPos.distanceTo(surfaceBouncePoint) + surfaceBouncePoint.distanceTo(endPos);
+            createSignalPath(startPos, endPos, surfaceDist / speed, 'surface', surfaceBouncePoint);
+
+            // 3. Ruta con Reflejo en Fondo
+            const floorBouncePoint = new THREE.Vector3().lerpVectors(startPos, endPos, 0.5);
+            floorBouncePoint.y = floor.position.y;
+            const floorDist = startPos.distanceTo(floorBouncePoint) + floorBouncePoint.distanceTo(endPos);
+            createSignalPath(startPos, endPos, floorDist / speed, 'floor', floorBouncePoint);
+        }
+
+        function createSignalPath(start, end, travelTime, type, bouncePoint = null) {
+            const signalGeo = new THREE.TorusGeometry(2, 0.5, 8, 32);
+            let signalColor;
+            if (type === 'direct') signalColor = 0xffff00;
+            if (type === 'surface') signalColor = 0xff6666;
+            if (type === 'floor') signalColor = 0x66a3ff;
+            
+            const signalMat = new THREE.MeshBasicMaterial({ color: signalColor, transparent: true, opacity: 0.8, wireframe: true });
+            const signalMesh = new THREE.Mesh(signalGeo, signalMat);
+            signalMesh.position.copy(start);
+            scene.add(signalMesh);
+            
+            activeSignals.push({
+                mesh: signalMesh,
+                start,
+                end,
+                bouncePoint,
+                type,
+                travelTime,
+                startTime: clock.getElapsedTime()
+            });
+        }
+        
+        function updateStatus(message, className) {
+            const p = document.createElement('p');
+            p.textContent = message;
+            p.className = className;
+            statusDiv.appendChild(p);
+            statusDiv.scrollTop = statusDiv.scrollHeight;
+        }
+
+        // --- Bucle de Animación ---
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            const elapsedTime = clock.getElapsedTime();
+
+            // Animar partículas
+            marineSnow.position.y -= delta * 0.5;
+            if (marineSnow.position.y < -100) marineSnow.position.y = 100;
+
+            // Actualizar señales activas
+            for (let i = activeSignals.length - 1; i >= 0; i--) {
+                const signal = activeSignals[i];
+                const progress = (elapsedTime - signal.startTime) / signal.travelTime;
+                
+                if (progress < 1) {
+                    if (signal.bouncePoint) {
+                        // Curva de Bézier cuadrática para el rebote
+                        const p0 = signal.start;
+                        const p1 = signal.bouncePoint;
+                        const p2 = signal.end;
+                        const t = progress;
+                        const invT = 1 - t;
+                        const x = invT * invT * p0.x + 2 * invT * t * p1.x + t * t * p2.x;
+                        const y = invT * invT * p0.y + 2 * invT * t * p1.y + t * t * p2.y;
+                        const z = invT * invT * p0.z + 2 * invT * t * p1.z + t * t * p2.z;
+                        signal.mesh.position.set(x, y, z);
+                    } else {
+                        // Interpolación lineal para la ruta directa
+                        signal.mesh.position.lerpVectors(signal.start, signal.end, progress);
+                    }
+                    signal.mesh.scale.set(1 + progress, 1 + progress, 1 + progress);
+                    signal.mesh.material.opacity = 0.8 * (1 - progress);
+
+                } else {
+                    // La señal llegó a su destino
+                    scene.remove(signal.mesh);
+                    activeSignals.splice(i, 1);
+                    updateStatus(`RECIBIDO: Paquete ${signal.type}`, signal.type);
+                    
+                    if (activeSignals.length === 0) {
+                        transmitting = false;
+                        updateStatus("Todos los paquetes recibidos. Listo.", "");
+                    }
+                }
+            }
+            
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Manejo de redimensionamiento de ventana
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
