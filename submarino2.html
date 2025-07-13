@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Simulación Realista de Comunicación Submarina</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        canvas { display: block; }
+        #info-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(10, 30, 50, 0.8);
+            color: #aaeaff;
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #4a90e2;
+            max-width: 320px;
+            box-shadow: 0 0 15px rgba(74, 144, 226, 0.5);
+        }
+        h1 { margin-top: 0; font-size: 1.2em; color: #ffffff; }
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #f5a623;
+            border: none;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 5px;
+            margin-top: 10px;
+            transition: background-color 0.3s;
+        }
+        button:hover { background-color: #f8b84e; }
+        #status {
+            margin-top: 10px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9em;
+            height: 120px;
+            overflow-y: auto;
+            background: rgba(0,0,0,0.3);
+            padding: 5px;
+            border-radius: 3px;
+        }
+        #status p { margin: 2px 0; }
+        .direct { color: #ffff00; font-weight: bold; }
+        .surface { color: #ff8080; }
+        .floor { color: #80bfff; }
+    </style>
+</head>
+<body>
+
+    <div id="info-panel">
+        <h1>Simulador Realista Submarino</h1>
+        <p>Observa el efecto multicamino en un entorno dinámico con vida marina, rocas, plantas y rayos de luz volumétricos.</p>
+        <button id="transmitButton">Transmitir Datos</button>
+        <div id="status">
+            <p>Estado: En espera...</p>
+        </div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { GodRaysPass } from 'three/addons/postprocessing/GodRaysPass.js';
+
+        // --- Configuración básica ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x1e5070, 100, 450);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 20, 180);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setClearColor(scene.fog.color);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.maxPolarAngle = Math.PI * 0.9;
+        controls.minDistance = 20;
+        controls.maxDistance = 300;
+
+        // --- Elementos del Entorno Mejorados ---
+        const seaLevel = 30;
+        
+        // Luces
+        const ambientLight = new THREE.AmbientLight(0x408090, 1.5);
+        scene.add(ambientLight);
+        const sunPosition = new THREE.Vector3(0, 200, -100);
+        const sun = new THREE.DirectionalLight(0xfff5e1, 3);
+        sun.position.copy(sunPosition);
+        scene.add(sun);
+
+        // Superficie del mar
+        const seaGeometry = new THREE.PlaneGeometry(1000, 1000, 100, 100);
+        const seaMaterial = new THREE.MeshStandardMaterial({
+            color: 0x4fa0d1,
+            transparent: true,
+            opacity: 0.8,
+            metalness: 0.9,
+            roughness: 0.1,
+        });
+        const seaSurface = new THREE.Mesh(seaGeometry, seaMaterial);
+        seaSurface.rotation.x = -Math.PI / 2;
+        seaSurface.position.y = seaLevel;
+        scene.add(seaSurface);
+
+        // Fondo marino con relieve
+        const floorGeometry = new THREE.PlaneGeometry(1000, 1000, 100, 100);
+        const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x4a4234, roughness: 1 });
+        const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+        const vertices = floor.geometry.attributes.position.array;
+        for (let i = 0; i < vertices.length; i += 3) {
+            const x = vertices[i];
+            const y = vertices[i + 1];
+            const noise = (Math.sin(x * 0.05) + Math.cos(y * 0.05)) * 5 + Math.random() * 3;
+            vertices[i + 2] = noise;
+        }
+        floor.geometry.attributes.position.needsUpdate = true;
+        floor.geometry.computeVertexNormals();
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = -60;
+        scene.add(floor);
+        
+        // Rocas generadas proceduralmente
+        function createRock(position, scale) {
+            const geo = new THREE.IcosahedronGeometry(scale, 1);
+            const rockVertices = geo.attributes.position.array;
+            for (let i = 0; i < rockVertices.length; i++) {
+                rockVertices[i] += (Math.random() - 0.5) * scale * 0.5;
+            }
+            geo.computeVertexNormals();
+            const mat = new THREE.MeshStandardMaterial({ color: 0x5c5c5c, roughness: 0.8 });
+            const rock = new THREE.Mesh(geo, mat);
+            rock.position.copy(position);
+            scene.add(rock);
+        }
+        for (let i = 0; i < 30; i++) {
+            const x = (Math.random() - 0.5) * 400;
+            const z = (Math.random() - 0.5) * 400;
+            const scale = Math.random() * 10 + 5;
+            createRock(new THREE.Vector3(x, floor.position.y + scale / 2, z), scale);
+        }
+        
+        // Plantas (algas)
+        const seaweeds = [];
+        function createSeaweed(position) {
+            const seaweedGroup = new THREE.Group();
+            const stemHeight = Math.random() * 20 + 10;
+            const stemMat = new THREE.MeshStandardMaterial({color: 0x228B22, roughness: 0.9});
+            for(let i=0; i<5; i++) {
+                const geo = new THREE.CylinderGeometry(0.1, 0.5, stemHeight, 8);
+                const stem = new THREE.Mesh(geo, stemMat);
+                stem.position.y = stemHeight / 2;
+                stem.rotation.x = (Math.random() - 0.5) * 0.5;
+                stem.rotation.z = (Math.random() - 0.5) * 0.5;
+                seaweedGroup.add(stem);
+            }
+            seaweedGroup.position.copy(position);
+            scene.add(seaweedGroup);
+            seaweeds.push(seaweedGroup);
+        }
+        for (let i = 0; i < 40; i++) {
+            createSeaweed(new THREE.Vector3((Math.random() - 0.5) * 300, floor.position.y, (Math.random() - 0.5) * 300));
+        }
+
+
+        // --- Actores de la Simulación ---
+        const transmitter = new THREE.Group(); // Submarino (igual que antes)
+        const subMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.9, roughness: 0.4 });
+        const subBody = new THREE.Mesh(new THREE.CapsuleGeometry(4, 16, 32, 32), subMaterial);
+        subBody.rotation.z = Math.PI / 2;
+        const subTower = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2, 6, 16), subMaterial);
+        subTower.position.y = 3;
+        transmitter.add(subBody, subTower);
+        transmitter.position.set(-100, -30, 0);
+        scene.add(transmitter);
+        
+        const receiver = new THREE.Group(); // Boya (igual que antes)
+        const buoyMaterial = new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.5 });
+        const buoyBody = new THREE.Mesh(new THREE.CylinderGeometry(3, 4, 8, 16), buoyMaterial);
+        buoyBody.position.y = seaLevel - 4;
+        const buoyAntenna = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 10, 8), new THREE.MeshStandardMaterial({color: 0x333333}));
+        buoyAntenna.position.y = seaLevel + 1;
+        receiver.add(buoyBody, buoyAntenna);
+        receiver.position.set(100, 0, 0);
+        scene.add(receiver);
+        const receiverPosition = new THREE.Vector3(100, seaLevel, 0);
+
+
+        // --- Vida Marina: Banco de Peces ---
+        const school = new THREE.Group();
+        const fishCount = 30;
+        const fishArray = [];
+        const fishGeo = new THREE.CapsuleGeometry(0.5, 1.5, 8, 16);
+        const fishMat = new THREE.MeshStandardMaterial({ color: 0xff8c00, metalness: 0.5, roughness: 0.5 });
+        for (let i = 0; i < fishCount; i++) {
+            const fish = new THREE.Mesh(fishGeo, fishMat);
+            const a = Math.random() * Math.PI * 2;
+            const r = Math.random() * 40 + 20;
+            fish.userData.angle = a;
+            fish.userData.radius = r;
+            fish.userData.speed = Math.random() * 0.2 + 0.1;
+            fish.userData.yOffset = (Math.random() - 0.5) * 20;
+            school.add(fish);
+        }
+        scene.add(school);
+
+        // --- Lógica de la Simulación de Señal (sin cambios) ---
+        const clock = new THREE.Clock();
+        let activeSignals = [];
+        const transmitButton = document.getElementById('transmitButton');
+        const statusDiv = document.getElementById('status');
+        let transmitting = false;
+        
+        transmitButton.addEventListener('click', () => { if (!transmitting) sendSignal(); });
+
+        function sendSignal() {
+            transmitting = true;
+            statusDiv.innerHTML = '<p>Estado: Transmitiendo...</p>';
+            const startPos = transmitter.position.clone();
+            const endPos = receiverPosition.clone();
+            const speed = 40; 
+            const directDist = startPos.distanceTo(endPos);
+            createSignalPath(startPos, endPos, directDist / speed, 'direct');
+            const surfaceBouncePoint = new THREE.Vector3().lerpVectors(startPos, endPos, 0.5);
+            surfaceBouncePoint.y = seaLevel;
+            const surfaceDist = startPos.distanceTo(surfaceBouncePoint) + surfaceBouncePoint.distanceTo(endPos);
+            createSignalPath(startPos, endPos, surfaceDist / speed, 'surface', surfaceBouncePoint);
+            const floorBouncePoint = new THREE.Vector3().lerpVectors(startPos, endPos, 0.5);
+            floorBouncePoint.y = floor.position.y;
+            const floorDist = startPos.distanceTo(floorBouncePoint) + floorBouncePoint.distanceTo(endPos);
+            createSignalPath(startPos, endPos, floorDist / speed, 'floor', floorBouncePoint);
+        }
+
+        function createSignalPath(start, end, travelTime, type, bouncePoint = null) {
+            const signalGeo = new THREE.TorusGeometry(2, 0.5, 8, 32);
+            const colors = { direct: 0xffff00, surface: 0xff6666, floor: 0x66a3ff };
+            const signalMat = new THREE.MeshBasicMaterial({ color: colors[type], transparent: true, opacity: 0.9, wireframe: true });
+            const signalMesh = new THREE.Mesh(signalGeo, signalMat);
+            signalMesh.position.copy(start);
+            scene.add(signalMesh);
+            activeSignals.push({ mesh: signalMesh, start, end, bouncePoint, type, travelTime, startTime: clock.getElapsedTime() });
+        }
+        
+        function updateStatus(message, className) {
+            const p = document.createElement('p');
+            p.textContent = message;
+            p.className = className;
+            statusDiv.appendChild(p);
+            statusDiv.scrollTop = statusDiv.scrollHeight;
+        }
+
+
+        // --- Post-procesamiento: God Rays ---
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+
+        const godraysPass = new GodRaysPass(sun, camera, scene, {
+            resolutionScale: 1,
+            density: 0.9,
+            decay: 0.96,
+            weight: 0.4,
+            samples: 100,
+        });
+        composer.addPass(godraysPass);
+
+
+        // --- Bucle de Animación ---
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            const elapsedTime = clock.getElapsedTime();
+
+            // Animar peces
+            fishArray.forEach(fish => {
+                fish.userData.angle += fish.userData.speed * delta;
+                const x = Math.cos(fish.userData.angle) * fish.userData.radius;
+                const z = Math.sin(fish.userData.angle) * fish.userData.radius;
+                fish.position.set(x, fish.userData.yOffset, z);
+                fish.rotation.y = -fish.userData.angle + Math.PI/2;
+            });
+            school.children.forEach(fish => {
+                fish.userData.angle += fish.userData.speed * delta;
+                const x = Math.cos(fish.userData.angle) * fish.userData.radius;
+                const z = Math.sin(fish.userData.angle) * fish.userData.radius;
+                fish.position.set(x, fish.userData.yOffset, z);
+                fish.rotation.y = -fish.userData.angle + Math.PI/2;
+            });
+            
+            // Animar plantas
+            seaweeds.forEach(sw => {
+                sw.rotation.y += Math.sin(elapsedTime * 0.5 + sw.position.x) * delta * 0.1;
+                sw.rotation.x += Math.cos(elapsedTime * 0.5 + sw.position.z) * delta * 0.1;
+            });
+
+            // Actualizar señales activas (misma lógica)
+            for (let i = activeSignals.length - 1; i >= 0; i--) {
+                const signal = activeSignals[i];
+                const progress = (elapsedTime - signal.startTime) / signal.travelTime;
+                if (progress < 1) {
+                    if (signal.bouncePoint) {
+                        const p0 = signal.start, p1 = signal.bouncePoint, p2 = signal.end, t = progress, invT = 1 - t;
+                        signal.mesh.position.set(invT * invT * p0.x + 2 * invT * t * p1.x + t * t * p2.x, invT * invT * p0.y + 2 * invT * t * p1.y + t * t * p2.y, invT * invT * p0.z + 2 * invT * t * p1.z + t * t * p2.z);
+                    } else {
+                        signal.mesh.position.lerpVectors(signal.start, signal.end, progress);
+                    }
+                    signal.mesh.scale.set(1 + progress, 1 + progress, 1 + progress);
+                    signal.mesh.material.opacity = 0.9 * (1 - progress);
+                } else {
+                    scene.remove(signal.mesh);
+                    activeSignals.splice(i, 1);
+                    updateStatus(`RECIBIDO: Paquete ${signal.type}`, signal.type);
+                    if (activeSignals.length === 0) {
+                        transmitting = false;
+                        updateStatus("Todos los paquetes recibidos. Listo.", "");
+                    }
+                }
+            }
+            
+            controls.update();
+            composer.render(delta); // Usar el composer en lugar del renderer directo
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
