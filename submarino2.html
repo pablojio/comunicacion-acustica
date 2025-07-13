@@ -59,23 +59,26 @@
         </div>
     </div>
 
-   <script type="importmap">
-    {
-        "imports": {
-            "three": "https://cdn.skypack.dev/three@0.160.0",
-            "three/addons/": "https://cdn.skypack.dev/three@0.160.0/examples/jsm/"
+    <!-- CORRECCIÓN 1: Usar Skypack CDN -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.skypack.dev/three@0.160.0",
+                "three/addons/": "https://cdn.skypack.dev/three@0.160.0/examples/jsm/"
+            }
         }
-    }
-   </script>
+    </script>
 
     <script type="module">
+        // CORRECCIÓN 2: Imports sin llaves para exportaciones por defecto
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        // Fíjate que hemos quitado las llaves {} de las siguientes tres líneas:
         import EffectComposer from 'three/addons/postprocessing/EffectComposer.js';
         import RenderPass from 'three/addons/postprocessing/RenderPass.js';
         import GodRaysPass from 'three/addons/postprocessing/GodRaysPass.js';
-       
+
+        // --- El resto del código permanece igual ---
+
         // --- Configuración básica ---
         const scene = new THREE.Scene();
         scene.fog = new THREE.Fog(0x1e5070, 100, 450);
@@ -179,7 +182,7 @@
 
 
         // --- Actores de la Simulación ---
-        const transmitter = new THREE.Group(); // Submarino (igual que antes)
+        const transmitter = new THREE.Group(); // Submarino
         const subMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.9, roughness: 0.4 });
         const subBody = new THREE.Mesh(new THREE.CapsuleGeometry(4, 16, 32, 32), subMaterial);
         subBody.rotation.z = Math.PI / 2;
@@ -189,7 +192,7 @@
         transmitter.position.set(-100, -30, 0);
         scene.add(transmitter);
         
-        const receiver = new THREE.Group(); // Boya (igual que antes)
+        const receiver = new THREE.Group(); // Boya
         const buoyMaterial = new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.5 });
         const buoyBody = new THREE.Mesh(new THREE.CylinderGeometry(3, 4, 8, 16), buoyMaterial);
         buoyBody.position.y = seaLevel - 4;
@@ -204,7 +207,6 @@
         // --- Vida Marina: Banco de Peces ---
         const school = new THREE.Group();
         const fishCount = 30;
-        const fishArray = [];
         const fishGeo = new THREE.CapsuleGeometry(0.5, 1.5, 8, 16);
         const fishMat = new THREE.MeshStandardMaterial({ color: 0xff8c00, metalness: 0.5, roughness: 0.5 });
         for (let i = 0; i < fishCount; i++) {
@@ -219,7 +221,7 @@
         }
         scene.add(school);
 
-        // --- Lógica de la Simulación de Señal (sin cambios) ---
+        // --- Lógica de la Simulación de Señal ---
         const clock = new THREE.Clock();
         let activeSignals = [];
         const transmitButton = document.getElementById('transmitButton');
@@ -286,13 +288,6 @@
             const elapsedTime = clock.getElapsedTime();
 
             // Animar peces
-            fishArray.forEach(fish => {
-                fish.userData.angle += fish.userData.speed * delta;
-                const x = Math.cos(fish.userData.angle) * fish.userData.radius;
-                const z = Math.sin(fish.userData.angle) * fish.userData.radius;
-                fish.position.set(x, fish.userData.yOffset, z);
-                fish.rotation.y = -fish.userData.angle + Math.PI/2;
-            });
             school.children.forEach(fish => {
                 fish.userData.angle += fish.userData.speed * delta;
                 const x = Math.cos(fish.userData.angle) * fish.userData.radius;
@@ -307,7 +302,7 @@
                 sw.rotation.x += Math.cos(elapsedTime * 0.5 + sw.position.z) * delta * 0.1;
             });
 
-            // Actualizar señales activas (misma lógica)
+            // Actualizar señales activas
             for (let i = activeSignals.length - 1; i >= 0; i--) {
                 const signal = activeSignals[i];
                 const progress = (elapsedTime - signal.startTime) / signal.travelTime;
@@ -332,7 +327,7 @@
             }
             
             controls.update();
-            composer.render(delta); // Usar el composer en lugar del renderer directo
+            composer.render(delta);
         }
 
         window.addEventListener('resize', () => {
