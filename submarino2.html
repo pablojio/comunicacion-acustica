@@ -71,10 +71,11 @@
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-        import { GodRaysPass } from 'three/addons/postprocessing/GodRaysPass.js';
-
+        // Fíjate que hemos quitado las llaves {} de las siguientes tres líneas:
+        import EffectComposer from 'three/addons/postprocessing/EffectComposer.js';
+        import RenderPass from 'three/addons/postprocessing/RenderPass.js';
+        import GodRaysPass from 'three/addons/postprocessing/GodRaysPass.js';
+       
         // --- Configuración básica ---
         const scene = new THREE.Scene();
         scene.fog = new THREE.Fog(0x1e5070, 100, 450);
